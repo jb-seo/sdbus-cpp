@@ -211,14 +211,18 @@ public:
         os << "{"
            << "\"@timestamp\":\"" << jsonEscape(timestamp) << "\","
            << "\"host_ip\":\"" << jsonEscape(hostIp) << "\","
+           << "\"caller\":{"
            << "\"sender\":\"" << jsonEscape(ev.sender) << "\","
            << "\"name\":\"" << jsonEscape(name) << "\","
-           << "\"interface\":\"" << jsonEscape(ev.interfaceName) << "\","
-           << "\"object\":\"" << jsonEscape(ev.objectPath) << "\","
-           << "\"method\":\"" << jsonEscape(ev.methodName) << "\","
            << "\"pid\":" << ev.pid << ","
            << "\"exe\":\"" << jsonEscape(exePath) << "\","
            << "\"cmdline\":\"" << jsonEscape(cmdline) << "\""
+           << "},"
+           << "\"callee\":{"
+           << "\"interface\":\"" << jsonEscape(ev.interfaceName) << "\","
+           << "\"object\":\"" << jsonEscape(ev.objectPath) << "\","
+           << "\"method\":\"" << jsonEscape(ev.methodName) << "\""
+           << "}"
            << "}";
         return os.str();
     }
