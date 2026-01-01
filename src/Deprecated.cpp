@@ -26,20 +26,29 @@
 
 #include "sdbus-c++/Deprecated.h"
 
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <string>
+
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 
 namespace sdbus {
 
 namespace {
 
 constexpr const char* kEnvLogDeprecatedMethods = "SDBUSCPP_LOG_DEPRECATED_METHODS";
+constexpr const char* kEnvUdsPath = "SDBUSCPP_DEPRECATED_UDS_PATH";
+constexpr const char* kDefaultUdsPath = "/run/sdbus-deprecated.sock";
 
 std::mutex handlerMutex;
 DeprecatedMethodHandler handler;
 bool envChecked = false;
+std::string udsPath;
 
 void logDeprecatedMethodCall(const DeprecatedMethodCallInfo& info)
 {
@@ -51,6 +60,59 @@ void logDeprecatedMethodCall(const DeprecatedMethodCallInfo& info)
                  info.objectPath.c_str(),
                  sender,
                  static_cast<long>(info.pid));
+}
+
+void sendDeprecatedMethodCall(const DeprecatedMethodCallInfo& info)
+{
+    if (udsPath.empty())
+        return;
+
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0)
+        return;
+
+    sockaddr_un addr{};
+    addr.sun_family = AF_UNIX;
+    if (udsPath.size() >= sizeof(addr.sun_path))
+    {
+        close(fd);
+        return;
+    }
+    std::strncpy(addr.sun_path, udsPath.c_str(), sizeof(addr.sun_path) - 1);
+
+    if (connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0)
+    {
+        close(fd);
+        return;
+    }
+
+    std::string line = info.sender.empty() ? "-" : info.sender;
+    line.append(" ");
+    line.append(info.interfaceName);
+    line.append(" ");
+    line.append(info.objectPath);
+    line.append(" ");
+    line.append(info.methodName);
+    line.append(" ");
+    line.append(std::to_string(static_cast<long>(info.pid)));
+    line.append("\n");
+
+    const char* data = line.data();
+    size_t remaining = line.size();
+    while (remaining > 0)
+    {
+        ssize_t n = write(fd, data, remaining);
+        if (n < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            break;
+        }
+        data += n;
+        remaining -= static_cast<size_t>(n);
+    }
+
+    close(fd);
 }
 
 } // namespace
@@ -68,9 +130,19 @@ DeprecatedMethodHandler getDeprecatedMethodHandler()
     if (!handler && !envChecked)
     {
         envChecked = true;
-        const char* env = std::getenv(kEnvLogDeprecatedMethods);
-        if (env && *env != '\0' && std::strcmp(env, "0") != 0)
+        const char* logEnv = std::getenv(kEnvLogDeprecatedMethods);
+        if (logEnv && *logEnv != '\0' && std::strcmp(logEnv, "0") != 0)
+        {
             handler = logDeprecatedMethodCall;
+            return handler;
+        }
+
+        const char* pathEnv = std::getenv(kEnvUdsPath);
+        if (pathEnv && std::strcmp(pathEnv, "0") == 0)
+            return handler;
+
+        udsPath = pathEnv && *pathEnv != '\0' ? pathEnv : kDefaultUdsPath;
+        handler = sendDeprecatedMethodCall;
     }
 
     return handler;

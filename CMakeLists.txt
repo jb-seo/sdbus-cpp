@@ -31,6 +31,7 @@ if (SDBUSCPP_BUILD_TESTS)
 endif()
 option(SDBUSCPP_BUILD_CODEGEN "Build generator tool for C++ native bindings" OFF)
 option(SDBUSCPP_BUILD_EXAMPLES "Build example programs" OFF)
+option(SDBUSCPP_BUILD_DAEMON "Build deprecated call collector daemon" OFF)
 option(SDBUSCPP_BUILD_DOCS "Build documentation for sdbus-c++" ON)
 if(SDBUSCPP_BUILD_DOCS)
     option(SDBUSCPP_BUILD_DOXYGEN_DOCS "Build doxygen documentation for sdbus-c++ API" OFF)
@@ -63,6 +64,7 @@ if(SDBUSCPP_BUILD_TESTS)
 endif()
 message(STATUS "  SDBUSCPP_BUILD_CODEGEN: ${SDBUSCPP_BUILD_CODEGEN}")
 message(STATUS "  SDBUSCPP_BUILD_EXAMPLES: ${SDBUSCPP_BUILD_EXAMPLES}")
+message(STATUS "  SDBUSCPP_BUILD_DAEMON: ${SDBUSCPP_BUILD_DAEMON}")
 message(STATUS "  SDBUSCPP_BUILD_DOCS: ${SDBUSCPP_BUILD_DOCS}")
 if(SDBUSCPP_BUILD_DOCS)
     message(STATUS "    SDBUSCPP_BUILD_DOXYGEN_DOCS: ${SDBUSCPP_BUILD_DOXYGEN_DOCS}")
@@ -183,6 +185,10 @@ set(SDBUSCPP_PUBLIC_HDRS
     ${SDBUSCPP_INCLUDE_DIR}/sdbus-c++.h)
 
 set(SDBUSCPP_SRCS ${SDBUSCPP_CPP_SRCS} ${SDBUSCPP_HDR_SRCS} ${SDBUSCPP_PUBLIC_HDRS})
+
+if(SDBUSCPP_BUILD_DAEMON)
+    add_subdirectory(daemon)
+endif()
 
 #-------------------------------
 # GENERAL COMPILER CONFIGURATION
