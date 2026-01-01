@@ -9,6 +9,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <poll.h>
+
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 #include <netdb.h>
@@ -103,7 +105,19 @@ public:
     void enqueue(std::string payload)
     {
         pending_.push_back(std::move(payload));
-        flush();
+        flush("enqueue");
+    }
+
+    void flushPending()
+    {
+        if (pending_.empty())
+            return;
+        flush("periodic");
+    }
+
+    size_t pendingSize() const
+    {
+        return pending_.size();
     }
 
 private:
@@ -174,14 +188,23 @@ private:
         return (res == CURLE_OK && (httpCode == 200 || httpCode == 201));
     }
 
-    void flush()
+    void flush(const char* reason)
     {
+        if (!pending_.empty())
+            std::cout << "[elastic] attempt reason=" << reason << " queued=" << pending_.size() << "\n";
+
         while (!pending_.empty())
         {
             if (!sendPayload(pending_.front()))
+            {
+                std::cout << "[elastic] send failed, queued=" << pending_.size() << "\n";
                 break;
+            }
             pending_.pop_front();
         }
+
+        if (pending_.empty())
+            std::cout << "[elastic] queue empty\n";
     }
 
     std::string url_;
@@ -486,6 +509,25 @@ int main(int argc, char** argv)
 
     for (;;)
     {
+        pollfd pfd{};
+        pfd.fd = serverFd;
+        pfd.events = POLLIN;
+
+        int pr = poll(&pfd, 1, 10000);
+        if (pr == 0)
+        {
+            if (sink.pendingSize() > 0)
+                sink.flushPending();
+            continue;
+        }
+        if (pr < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            std::cerr << "Poll error\n";
+            break;
+        }
+
         int clientFd = accept(serverFd, nullptr, nullptr);
         if (clientFd < 0)
         {
