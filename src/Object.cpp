@@ -27,6 +27,7 @@
 #include "Object.h"
 
 #include "sdbus-c++/Error.h"
+#include "sdbus-c++/Deprecated.h"
 #include "sdbus-c++/Flags.h"
 #include "sdbus-c++/IConnection.h"
 #include "sdbus-c++/Message.h"
@@ -331,6 +332,25 @@ int Object::sdbus_method_callback(sd_bus_message *sdbusMessage, void *userData, 
     const auto* methodItem = findMethod(*vtable, message.getMemberName());
     assert(methodItem != nullptr);
     assert(methodItem->callback);
+
+    if (methodItem->flags.test(Flags::DEPRECATED) || vtable->interfaceFlags.test(Flags::DEPRECATED))
+    {
+        auto handler = sdbus::getDeprecatedMethodHandler();
+        if (handler)
+        {
+            sdbus::DeprecatedMethodCallInfo info;
+            info.interfaceName = vtable->interfaceName;
+            info.methodName = methodItem->name;
+            info.objectPath = vtable->object->getObjectPath();
+
+            if (const char* sender = message.getSender())
+                info.sender = sender;
+
+            try { info.pid = message.getCredsPid(); } catch (...) {}
+
+            try { handler(info); } catch (...) {}
+        }
+    }
 
     auto ok = invokeHandlerAndCatchErrors([&](){ methodItem->callback(std::move(message)); }, retError);
 

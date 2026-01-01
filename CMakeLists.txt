@@ -140,6 +140,7 @@ set(SDBUSCPP_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include/${SDBUSCPP_INCLUDE_
 
 set(SDBUSCPP_CPP_SRCS
     ${SDBUSCPP_SOURCE_DIR}/Connection.cpp
+    ${SDBUSCPP_SOURCE_DIR}/Deprecated.cpp
     ${SDBUSCPP_SOURCE_DIR}/Error.cpp
     ${SDBUSCPP_SOURCE_DIR}/Message.cpp
     ${SDBUSCPP_SOURCE_DIR}/Object.cpp
@@ -167,6 +168,7 @@ set(SDBUSCPP_PUBLIC_HDRS
     ${SDBUSCPP_INCLUDE_DIR}/VTableItems.h
     ${SDBUSCPP_INCLUDE_DIR}/VTableItems.inl
     ${SDBUSCPP_INCLUDE_DIR}/Error.h
+    ${SDBUSCPP_INCLUDE_DIR}/Deprecated.h
     ${SDBUSCPP_INCLUDE_DIR}/IConnection.h
     ${SDBUSCPP_INCLUDE_DIR}/AdaptorInterfaces.h
     ${SDBUSCPP_INCLUDE_DIR}/ProxyInterfaces.h

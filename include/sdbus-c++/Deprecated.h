@@ -2,11 +2,11 @@
  * (C) 2016 - 2021 KISTLER INSTRUMENTE AG, Winterthur, Switzerland
  * (C) 2016 - 2024 Stanislav Angelovic <stanislav.angelovic@protonmail.com>
  *
- * @file sdbus-c++.h
+ * @file Deprecated.h
  *
- * Created on: Jan 19, 2017
+ * Created on: Jan 1, 2025
  * Project: sdbus-c++
- * Description: High-level D-Bus IPC C++ library based on sd-bus
+ * Description: Deprecated API call reporting helpers
  *
  * This file is part of sdbus-c++.
  *
@@ -24,16 +24,29 @@
  * along with sdbus-c++. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <sdbus-c++/IConnection.h>
-#include <sdbus-c++/IObject.h>
-#include <sdbus-c++/IProxy.h>
-#include <sdbus-c++/AdaptorInterfaces.h>
-#include <sdbus-c++/ProxyInterfaces.h>
-#include <sdbus-c++/StandardInterfaces.h>
-#include <sdbus-c++/Message.h>
-#include <sdbus-c++/MethodResult.h>
-#include <sdbus-c++/Types.h>
-#include <sdbus-c++/TypeTraits.h>
-#include <sdbus-c++/Error.h>
-#include <sdbus-c++/Flags.h>
-#include <sdbus-c++/Deprecated.h>
+#ifndef SDBUS_CXX_DEPRECATED_H_
+#define SDBUS_CXX_DEPRECATED_H_
+
+#include <functional>
+#include <string>
+#include <sys/types.h>
+
+namespace sdbus {
+
+    struct DeprecatedMethodCallInfo
+    {
+        std::string interfaceName;
+        std::string methodName;
+        std::string objectPath;
+        std::string sender;
+        pid_t pid{-1};
+    };
+
+    using DeprecatedMethodHandler = std::function<void(const DeprecatedMethodCallInfo&)>;
+
+    void setDeprecatedMethodHandler(DeprecatedMethodHandler handler);
+    DeprecatedMethodHandler getDeprecatedMethodHandler();
+
+}
+
+#endif /* SDBUS_CXX_DEPRECATED_H_ */
