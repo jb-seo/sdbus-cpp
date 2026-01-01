@@ -34,7 +34,9 @@ namespace {
 
 constexpr const char* kEnvUdsPath = "SDBUSCPP_DEPRECATED_UDS_PATH";
 constexpr const char* kEnvElasticUrl = "SDBUSCPP_ELASTIC_URL";
+constexpr const char* kEnvCollectorBus = "SDBUSCPP_COLLECTOR_BUS";
 constexpr const char* kDefaultUdsPath = "/run/sdbus-deprecated.sock";
+constexpr const char* kEnvXdgRuntimeDir = "XDG_RUNTIME_DIR";
 constexpr const char* kDefaultElasticUrl = "http://localhost:9200/sdbus-deprecated/_doc";
 
 struct Event
@@ -74,18 +76,18 @@ public:
         ownerToNames_[newOwner].insert(name);
     }
 
-    std::vector<std::string> getNamesForOwner(const std::string& owner) const
+    std::string getNameForOwner(const std::string& owner) const
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        std::vector<std::string> names;
         auto it = ownerToNames_.find(owner);
         if (it == ownerToNames_.end())
-            return names;
-
-        names.reserve(it->second.size());
+            return "-";
         for (const auto& name : it->second)
-            names.push_back(name);
-        return names;
+        {
+            if (!name.empty() && name[0] != ':')
+                return name;
+        }
+        return "-";
     }
 
 private:
@@ -147,19 +149,6 @@ private:
         return out;
     }
 
-    static std::string jsonArray(const std::vector<std::string>& values)
-    {
-        std::ostringstream os;
-        os << "[";
-        for (size_t i = 0; i < values.size(); ++i)
-        {
-            if (i != 0)
-                os << ",";
-            os << "\"" << jsonEscape(values[i]) << "\"";
-        }
-        os << "]";
-        return os.str();
-    }
 
     bool sendPayload(const std::string& payload)
     {
@@ -212,7 +201,7 @@ private:
 
 public:
     std::string buildPayload(const Event& ev,
-                             const std::vector<std::string>& names,
+                             const std::string& name,
                              const std::string& exePath,
                              const std::string& cmdline,
                              const std::string& timestamp,
@@ -223,7 +212,7 @@ public:
            << "\"@timestamp\":\"" << jsonEscape(timestamp) << "\","
            << "\"host_ip\":\"" << jsonEscape(hostIp) << "\","
            << "\"sender\":\"" << jsonEscape(ev.sender) << "\","
-           << "\"names\":" << jsonArray(names) << ","
+           << "\"name\":\"" << jsonEscape(name) << "\","
            << "\"interface\":\"" << jsonEscape(ev.interfaceName) << "\","
            << "\"object\":\"" << jsonEscape(ev.objectPath) << "\","
            << "\"method\":\"" << jsonEscape(ev.methodName) << "\","
@@ -247,6 +236,9 @@ std::string getSocketPath()
     const char* env = std::getenv(kEnvUdsPath);
     if (env && *env != '\0' && std::strcmp(env, "0") != 0)
         return env;
+    const char* runtimeDir = std::getenv(kEnvXdgRuntimeDir);
+    if (runtimeDir && *runtimeDir != '\0')
+        return std::string(runtimeDir) + "/sdbus-deprecated.sock";
     return kDefaultUdsPath;
 }
 
@@ -256,6 +248,14 @@ std::string getElasticUrl()
     if (env && *env != '\0' && std::strcmp(env, "0") != 0)
         return env;
     return kDefaultElasticUrl;
+}
+
+std::string getCollectorBus()
+{
+    const char* env = std::getenv(kEnvCollectorBus);
+    if (env && *env != '\0')
+        return env;
+    return "auto";
 }
 
 bool parseLine(const std::string& line, Event& out)
@@ -385,19 +385,7 @@ std::string getHostIp()
 
 void handleEvent(const Event& ev, const NameOwnerCache& cache, ElasticSink& sink)
 {
-    auto names = cache.getNamesForOwner(ev.sender);
-    std::ostringstream os;
-    if (names.empty())
-        os << "-";
-    else
-    {
-        for (size_t i = 0; i < names.size(); ++i)
-        {
-            if (i != 0)
-                os << ",";
-            os << names[i];
-        }
-    }
+    const std::string name = cache.getNameForOwner(ev.sender);
 
     const std::string exePath = readExePath(ev.pid);
     const std::string cmdline = readCmdline(ev.pid);
@@ -406,7 +394,7 @@ void handleEvent(const Event& ev, const NameOwnerCache& cache, ElasticSink& sink
 
     std::cout << "[" << (timestamp.empty() ? "-" : timestamp) << "] Deprecated - "
               << "sender=" << ev.sender
-              << " names=" << os.str()
+              << " name=" << name
               << " interface=" << ev.interfaceName
               << " object=" << ev.objectPath
               << " method=" << ev.methodName
@@ -415,7 +403,7 @@ void handleEvent(const Event& ev, const NameOwnerCache& cache, ElasticSink& sink
               << "\n";
     std::cout.flush();
 
-    sink.enqueue(sink.buildPayload(ev, names, exePath, cmdline, timestamp, hostIp));
+    sink.enqueue(sink.buildPayload(ev, name, exePath, cmdline, timestamp, hostIp));
 }
 
 void seedNameCache(sdbus::IConnection& connection, NameOwnerCache& cache)
@@ -450,8 +438,9 @@ void seedNameCache(sdbus::IConnection& connection, NameOwnerCache& cache)
 
 int main(int argc, char** argv)
 {
-    const std::string socketPath = (argc > 1) ? argv[1] : getSocketPath();
-    const std::string elasticUrl = (argc > 2) ? argv[2] : getElasticUrl();
+    const std::string busMode = (argc > 1) ? argv[1] : getCollectorBus();
+    const std::string socketPath = (argc > 2) ? argv[2] : getSocketPath();
+    const std::string elasticUrl = (argc > 3) ? argv[3] : getElasticUrl();
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
     int serverFd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -486,7 +475,22 @@ int main(int argc, char** argv)
 
     NameOwnerCache cache;
     ElasticSink sink(elasticUrl);
-    auto connection = sdbus::createBusConnection();
+    std::unique_ptr<sdbus::IConnection> connection;
+    if (busMode == "session")
+    {
+        connection = sdbus::createSessionBusConnection();
+        std::cerr << "[collector] bus=session\n";
+    }
+    else if (busMode == "system")
+    {
+        connection = sdbus::createSystemBusConnection();
+        std::cerr << "[collector] bus=system\n";
+    }
+    else
+    {
+        connection = sdbus::createBusConnection();
+        std::cerr << "[collector] bus=auto\n";
+    }
     connection->addMatch(
         "type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged'",
         [&cache](sdbus::Message msg) {
@@ -503,6 +507,7 @@ int main(int argc, char** argv)
     }
     catch (...)
     {
+        std::cerr << "[collector] seedNameCache failed\n";
     }
 
     connection->enterEventLoopAsync();

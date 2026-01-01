@@ -44,6 +44,7 @@ namespace {
 constexpr const char* kEnvLogDeprecatedMethods = "SDBUSCPP_LOG_DEPRECATED_METHODS";
 constexpr const char* kEnvUdsPath = "SDBUSCPP_DEPRECATED_UDS_PATH";
 constexpr const char* kDefaultUdsPath = "/run/sdbus-deprecated.sock";
+constexpr const char* kEnvXdgRuntimeDir = "XDG_RUNTIME_DIR";
 
 std::mutex handlerMutex;
 DeprecatedMethodHandler handler;
@@ -115,6 +116,14 @@ void sendDeprecatedMethodCall(const DeprecatedMethodCallInfo& info)
     close(fd);
 }
 
+std::string getDefaultUdsPath()
+{
+    const char* runtimeDir = std::getenv(kEnvXdgRuntimeDir);
+    if (runtimeDir && *runtimeDir != '\0')
+        return std::string(runtimeDir) + "/sdbus-deprecated.sock";
+    return kDefaultUdsPath;
+}
+
 } // namespace
 
 void setDeprecatedMethodHandler(DeprecatedMethodHandler newHandler)
@@ -141,7 +150,7 @@ DeprecatedMethodHandler getDeprecatedMethodHandler()
         if (pathEnv && std::strcmp(pathEnv, "0") == 0)
             return handler;
 
-        udsPath = pathEnv && *pathEnv != '\0' ? pathEnv : kDefaultUdsPath;
+        udsPath = pathEnv && *pathEnv != '\0' ? pathEnv : getDefaultUdsPath();
         handler = sendDeprecatedMethodCall;
     }
 
